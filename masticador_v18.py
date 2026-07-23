@@ -328,6 +328,39 @@ hr { margin:0.6rem 0 !important; }
     0 0 22px rgba(19,216,239,0.55) !important;
   color:#003248 !important;
 }
+
+/* Botones de descarga Excel (título de cada tabla) → biselado, más chicos */
+.excel-dl-wrap { margin-top:2px; }
+.excel-dl-wrap [data-testid="stDownloadButton"] button {
+  background:linear-gradient(180deg,#1FAE7A 0%,#0C5C3E 100%) !important;
+  border:1px solid #04321f !important;
+  border-top:1px solid rgba(255,255,255,0.55) !important;
+  border-left:1px solid rgba(255,255,255,0.22) !important;
+  color:#eafff5 !important;
+  font-family:Orbitron,monospace !important;
+  font-size:0.62rem !important; font-weight:700 !important; letter-spacing:1px !important;
+  padding:5px 10px !important; border-radius:7px !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.4),
+    inset 0 -2px 4px rgba(0,0,0,0.45),
+    0 2px 5px rgba(0,0,0,0.4),
+    0 0 10px rgba(34,211,166,0.18) !important;
+  transition:all 0.12s ease !important;
+}
+.excel-dl-wrap [data-testid="stDownloadButton"] button:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -2px 4px rgba(0,0,0,0.5),
+    0 3px 8px rgba(0,0,0,0.45),
+    0 0 16px rgba(34,211,166,0.4) !important;
+  transform:translateY(-1px);
+}
+.excel-dl-wrap [data-testid="stDownloadButton"] button:active {
+  box-shadow:
+    inset 0 2px 5px rgba(0,0,0,0.55),
+    inset 0 -1px 0 rgba(255,255,255,0.15) !important;
+  transform:translateY(1px);
+}
 </style>
 """
 st.markdown(_CSS_TEMPLATE.replace("__BG_IMG_B64__", BG_IMG_B64), unsafe_allow_html=True)
@@ -455,6 +488,29 @@ def pl(extra=None):
     l = {**BASE_LAYOUT}
     if extra: l.update(extra)
     return l
+
+def df_to_excel_bytes(df_export, sheet_name="Datos"):
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df_export.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+    buf.seek(0)
+    return buf
+
+def title_with_download(title_html, df_export, filename, key, small=False):
+    """Renderiza un título de sección (o caption chico) con un botón de descarga
+    a Excel biselado alineado al final de la misma línea."""
+    c_title, c_btn = st.columns([7.2, 1.4])
+    with c_title:
+        st.markdown(title_html, unsafe_allow_html=True)
+    with c_btn:
+        st.markdown('<div class="excel-dl-wrap">', unsafe_allow_html=True)
+        st.download_button(
+            "⬇ EXCEL", data=df_to_excel_bytes(df_export),
+            file_name=filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=key, use_container_width=True,
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # ─── TMP prefix loader ───────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
@@ -812,7 +868,7 @@ down = prov_df[(prov_df["asr_real"]<5)  & (prov_df["llamadas"]>=10)]
 deg  = prov_df[(prov_df["asr_real"]>=5) & (prov_df["asr_real"]<30) & (prov_df["llamadas"]>=10)]
 
 failed = df[~df["is_connected"]].copy()
-failed["num_b"] = failed["Numero B Mod"].astype(str).str.replace(".0","",regex=False).str.strip()
+failed["num_b"] = failed["Numero B"].astype(str).str.replace(".0","",regex=False).str.strip()
 retry = (failed.groupby("num_b")
     .agg(
         intentos   =("Causa","count"),
@@ -826,8 +882,8 @@ retry = (failed.groupby("num_b")
 )
 max_retry  = retry["intentos"].iloc[0] if not retry.empty else 0
 
-# Retry por Número A (origen)
-retry_a = (failed.groupby("Numero A")
+# Retry por Número A (ANI IPLAN — modificado)
+retry_a = (failed.groupby("Numero A Mod")
     .agg(
         intentos   =("Causa","count"),
         causas_top =("Causa", lambda x: " | ".join([f"C{k}:{v}" for k,v in x.value_counts().head(3).items()])),
@@ -836,7 +892,7 @@ retry_a = (failed.groupby("Numero A")
         dest_nombre=("dest_nombre", lambda x: x.mode().iloc[0] if len(x)>0 else "N/D"),
     )
     .reset_index()
-    .rename(columns={"Numero A":"num_a"})
+    .rename(columns={"Numero A Mod":"num_a"})
     .sort_values("intentos",ascending=False)
 )
 
@@ -1044,8 +1100,12 @@ if _active == "PERFIL TRÁFICO":
     st.plotly_chart(fig, use_container_width=True)
 
     # TABLA COMPLETA DE CAUSAS
-    st.markdown('<div class="section-header" style="margin-top:14px;">▸ DISTRIBUCIÓN COMPLETA DE RELEASE CAUSES</div>', unsafe_allow_html=True)
     tbl_causa = causa_cnt[["causa","nombre","desc","cat","count","pct"]].copy()
+    title_with_download(
+        '<div class="section-header" style="margin-top:14px;">▸ DISTRIBUCIÓN COMPLETA DE RELEASE CAUSES</div>',
+        tbl_causa.rename(columns={"causa":"Código","nombre":"Nombre Q.850","desc":"Descripción",
+                                   "cat":"Categoría","count":"Llamadas","pct":"%"}),
+        "release_causes.xlsx", "dl_release_causes")
     tbl_causa["Llamadas_fmt"] = tbl_causa["count"].apply(lambda v: f"{v:,}".replace(",","."))
     max_calls = tbl_causa["count"].max()
     rows_html = ""
@@ -1237,36 +1297,47 @@ if _active == "PROVEEDORES":
     # Caídos / degradados
     cd1, cd2 = st.columns(2)
     with cd1:
-        st.markdown('<div style="font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#ff2d55;'
-                    'letter-spacing:3px;margin-bottom:6px;text-transform:uppercase;">🔴 POSIBLEMENTE CAÍDOS — ASR Real &lt; 5%</div>',
-                    unsafe_allow_html=True)
         if down.empty:
+            st.markdown('<div style="font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#ff2d55;'
+                        'letter-spacing:3px;margin-bottom:6px;text-transform:uppercase;">🔴 POSIBLEMENTE CAÍDOS — ASR Real &lt; 5%</div>',
+                        unsafe_allow_html=True)
             st.markdown('<div style="color:#00ff88;font-family:Rajdhani,sans-serif;font-size:0.9rem;font-weight:600;">'
                         '✓ Sin proveedores caídos</div>', unsafe_allow_html=True)
         else:
-            st.dataframe(down[["proveedor","llamadas","conectadas","asr_global","asr_real"]].rename(
+            down_export = down[["proveedor","llamadas","conectadas","asr_global","asr_real"]].rename(
                 columns={"proveedor":"Proveedor","llamadas":"Llamadas","conectadas":"Conectadas",
-                         "asr_global":"ASR Global %","asr_real":"ASR Real %"}),
-                hide_index=True, use_container_width=True)
+                         "asr_global":"ASR Global %","asr_real":"ASR Real %"})
+            title_with_download(
+                '<div style="font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#ff2d55;'
+                'letter-spacing:3px;text-transform:uppercase;">🔴 POSIBLEMENTE CAÍDOS — ASR Real &lt; 5%</div>',
+                down_export, "proveedores_caidos.xlsx", "dl_prov_caidos")
+            st.dataframe(down_export, hide_index=True, use_container_width=True)
     with cd2:
-        st.markdown('<div style="font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#ffcc00;'
-                    'letter-spacing:3px;margin-bottom:6px;text-transform:uppercase;">🟡 DEGRADADOS — ASR Real 5%–30%</div>',
-                    unsafe_allow_html=True)
         if deg.empty:
+            st.markdown('<div style="font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#ffcc00;'
+                        'letter-spacing:3px;margin-bottom:6px;text-transform:uppercase;">🟡 DEGRADADOS — ASR Real 5%–30%</div>',
+                        unsafe_allow_html=True)
             st.markdown('<div style="color:#00ff88;font-family:Rajdhani,sans-serif;font-size:0.9rem;font-weight:600;">'
                         '✓ Sin degradación detectada</div>', unsafe_allow_html=True)
         else:
-            st.dataframe(deg[["proveedor","llamadas","conectadas","asr_global","asr_real"]].rename(
+            deg_export = deg[["proveedor","llamadas","conectadas","asr_global","asr_real"]].rename(
                 columns={"proveedor":"Proveedor","llamadas":"Llamadas","conectadas":"Conectadas",
-                         "asr_global":"ASR Global %","asr_real":"ASR Real %"}),
-                hide_index=True, use_container_width=True)
+                         "asr_global":"ASR Global %","asr_real":"ASR Real %"})
+            title_with_download(
+                '<div style="font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#ffcc00;'
+                'letter-spacing:3px;text-transform:uppercase;">🟡 DEGRADADOS — ASR Real 5%–30%</div>',
+                deg_export, "proveedores_degradados.xlsx", "dl_prov_deg")
+            st.dataframe(deg_export, hide_index=True, use_container_width=True)
 
-    st.markdown('<div class="section-header" style="margin-top:14px;">▸ TABLA COMPLETA PROVEEDOR / RUTA</div>', unsafe_allow_html=True)
-    st.dataframe(ruta_df.sort_values("llamadas",ascending=False).rename(columns={
+    ruta_export = ruta_df.sort_values("llamadas",ascending=False).rename(columns={
         "proveedor":"Proveedor","ruta_dest":"Ruta","llamadas":"Llamadas",
         "conectadas":"Conectadas","excluidas":"Excluidas","asr_global":"ASR Global %",
         "asr_real":"ASR Real %",
-    }), hide_index=True, use_container_width=True)
+    })
+    title_with_download(
+        '<div class="section-header" style="margin-top:14px;">▸ TABLA COMPLETA PROVEEDOR / RUTA</div>',
+        ruta_export, "proveedor_ruta.xlsx", "dl_prov_ruta")
+    st.dataframe(ruta_export, hide_index=True, use_container_width=True)
 
 # ════════════════════════════════════════════════════════
 # TAB 4 — EVOLUCIÓN TEMPORAL
@@ -1276,15 +1347,18 @@ if _active == "PROVEEDORES":
 # ════════════════════════════════════════════════════════
 if _active == "ANI-DNIS ANALISIS":
 
-    # REINTENTOS NÚMERO DESTINO (B)
-    st.markdown('<div class="section-header">▸ REINTENTOS SIN CONEXIÓN — NÚMERO DESTINO (B)</div>', unsafe_allow_html=True)
+    # REINTENTOS NÚMERO DESTINO (B) — número real discado por el cliente
     if retry.empty:
+        st.markdown('<div class="section-header">▸ LLAMADAS/REINTENTOS SIN CONEXIÓN — NÚMERO DESTINO</div>', unsafe_allow_html=True)
         st.markdown('<div style="color:#00ff88;font-family:Rajdhani,sans-serif;font-size:0.9rem;font-weight:600;">✓ Sin reintentos detectados.</div>', unsafe_allow_html=True)
     else:
         retry_tbl = retry.head(30).rename(columns={
-            "num_b":"Numero B Mod","intentos":"Intentos","causas_top":"Top 3 causas",
+            "num_b":"Numero B","intentos":"Intentos","causas_top":"Top 3 causas",
             "causa_princ":"Causa principal","proveedor":"Carrier","dest_nombre":"Destino",
         })
+        title_with_download(
+            '<div class="section-header">▸ LLAMADAS/REINTENTOS SIN CONEXIÓN — NÚMERO DESTINO</div>',
+            retry_tbl, "reintentos_numero_destino.xlsx", "dl_retry_b")
         st.dataframe(
             retry_tbl.style.set_table_styles([
                 {"selector":"th", "props":[("color","#000000"),("font-weight","bold"),
@@ -1293,15 +1367,18 @@ if _active == "ANI-DNIS ANALISIS":
             hide_index=True, use_container_width=True, height=380
         )
 
-    # REINTENTOS NÚMERO ORIGEN (A) — solo fallidas
-    st.markdown('<div class="section-header" style="margin-top:12px;">▸ REINTENTOS — NÚMERO (A) MODIFICADO — SOLO FALLIDAS</div>', unsafe_allow_html=True)
+    # REINTENTOS NÚMERO ANI IPLAN (A Mod) — solo fallidas
     if retry_a.empty:
+        st.markdown('<div class="section-header" style="margin-top:12px;">▸ LLAMADAS/REINTENTOS — NÚMERO ANI IPLAN — NO CONECTADAS</div>', unsafe_allow_html=True)
         st.markdown('<div style="color:#00ff88;font-family:Rajdhani,sans-serif;font-size:0.9rem;font-weight:600;">✓ Sin reintentos desde número origen detectados.</div>', unsafe_allow_html=True)
     else:
         retry_a_tbl = retry_a.head(30).rename(columns={
             "num_a":"Numero A Mod","intentos":"Intentos Fallidos","causas_top":"Top 3 causas",
             "causa_princ":"Causa principal","proveedor":"Carrier","dest_nombre":"Destino",
         })
+        title_with_download(
+            '<div class="section-header" style="margin-top:12px;">▸ LLAMADAS/REINTENTOS — NÚMERO ANI IPLAN — NO CONECTADAS</div>',
+            retry_a_tbl, "reintentos_numero_ani_iplan.xlsx", "dl_retry_a")
         st.dataframe(
             retry_a_tbl.style.set_table_styles([
                 {"selector":"th", "props":[("color","#000000"),("font-weight","bold"),
@@ -1310,47 +1387,41 @@ if _active == "ANI-DNIS ANALISIS":
             hide_index=True, use_container_width=True, height=380
         )
 
-    # ANÁLISIS COMPLETO — NUMERO A MOD (todas las llamadas)
-    st.markdown('<div class="section-header" style="margin-top:12px;">▸ ANÁLISIS NÚMERO A MOD — TODAS LAS LLAMADAS (BUENAS + MALAS)</div>', unsafe_allow_html=True)
-    st.markdown('<div style="font-family:Share Tech Mono,monospace;font-size:0.65rem;color:#3a7ca5;margin-bottom:8px;">Todos los Numero A Mod con al menos 1 llamada conectada · Total llamadas · Conectadas · No Conectadas · ASR Global · ASR Real · Minutos</div>', unsafe_allow_html=True)
-    num_a_conn_df = num_a_mod_df[num_a_mod_df["conectadas"]>0]
-    if num_a_conn_df.empty:
-        st.markdown('<div style="color:#3a7ca5;font-family:Rajdhani,sans-serif;font-size:0.9rem;">Sin datos de Numero A Mod con llamadas conectadas.</div>', unsafe_allow_html=True)
+    # LLAMADAS CONECTADAS (Causa 16 — Normal Clearing) por NÚMERO A MOD (ANI IPLAN)
+    st.markdown('<div class="section-header" style="margin-top:12px;">▸ LLAMADAS/REINTENTOS — NÚMERO ANI IPLAN - LAS LLAMADAS CONECTADAS</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-family:Share Tech Mono,monospace;font-size:0.65rem;color:#3a7ca5;margin-bottom:8px;">Cantidad de llamadas con Causa 16 (Normal Clearing / conectada) por cada Numero A Mod · Total llamadas del número · % C16 sobre el total · Minutos</div>', unsafe_allow_html=True)
+    c16_df = df[df["Causa"]==16]
+    num_a_c16 = c16_df.groupby("Numero A Mod").agg(
+        llamadas_c16=("Causa","count"),
+        minutos=("duration_min","sum"),
+    ).reset_index()
+    num_a_c16 = num_a_c16.merge(
+        num_a_mod_df[["Numero A Mod","total"]], on="Numero A Mod", how="left")
+    num_a_c16["minutos"]  = num_a_c16["minutos"].round(1)
+    num_a_c16["pct_c16"]  = np.where(num_a_c16["total"]>0,
+                                      (num_a_c16["llamadas_c16"]/num_a_c16["total"]*100).round(1), 0)
+    num_a_c16 = num_a_c16.sort_values("llamadas_c16", ascending=False)
+
+    if num_a_c16.empty:
+        st.markdown('<div style="color:#3a7ca5;font-family:Rajdhani,sans-serif;font-size:0.9rem;">Sin llamadas con Causa 16 (conectadas) en este dataset.</div>', unsafe_allow_html=True)
     else:
-        num_a_show = num_a_conn_df.copy()
+        num_a_show = num_a_c16.copy()
         num_a_show["Numero A Mod"] = num_a_show["Numero A Mod"].astype(str).str.replace(".0","",regex=False)
         num_a_show = num_a_show.rename(columns={
-            "Numero A Mod":"Numero A Mod","total":"Total","conectadas":"Conectadas",
-            "no_conn":"No Conectadas","minutos":"Minutos","asr_global":"ASR Global %","asr_real":"ASR Real %",
-        })[["Numero A Mod","Total","Conectadas","No Conectadas","ASR Global %","ASR Real %","Minutos"]]
+            "Numero A Mod":"Numero A Mod","llamadas_c16":"Llamadas C16 (Conectadas)",
+            "total":"Total Llamadas","pct_c16":"% C16 / Total","minutos":"Minutos",
+        })[["Numero A Mod","Llamadas C16 (Conectadas)","Total Llamadas","% C16 / Total","Minutos"]]
+        title_with_download(
+            '<div style="font-family:Share Tech Mono,monospace;font-size:0.7rem;color:#3a7ca5;">'
+            'Exportar tabla completa</div>',
+            num_a_show, f"numero_ani_iplan_conectadas_c16_{fecha_cdr_s}.xlsx", "dl_numa_c16")
         st.dataframe(
             num_a_show.style.set_table_styles([
                 {"selector":"th", "props":[("color","#000000"),("font-weight","bold"),
                                            ("background-color","#c8e6ff"),("font-size","0.82rem")]},
-            ]).background_gradient(subset=["Total"], cmap="Blues")
-             .background_gradient(subset=["ASR Real %"], cmap="RdYlGn", vmin=0, vmax=100),
+            ]).background_gradient(subset=["Llamadas C16 (Conectadas)"], cmap="Blues")
+             .background_gradient(subset=["% C16 / Total"], cmap="RdYlGn", vmin=0, vmax=100),
             hide_index=True, use_container_width=True, height=500
-        )
-
-        # Botón de descarga Excel — exporta TODOS los Numero A Mod (incluye conectadas=0)
-        num_a_export = num_a_mod_df.copy()
-        num_a_export["Numero A Mod"] = num_a_export["Numero A Mod"].astype(str).str.replace(".0","",regex=False)
-        num_a_export = num_a_export.rename(columns={
-            "Numero A Mod":"Numero A Mod","total":"Total","conectadas":"Conectadas",
-            "no_conn":"No Conectadas","minutos":"Minutos","asr_global":"ASR Global %","asr_real":"ASR Real %",
-        })[["Numero A Mod","Total","Conectadas","No Conectadas","ASR Global %","ASR Real %","Minutos"]]
-
-        _xlsx_buf = io.BytesIO()
-        with pd.ExcelWriter(_xlsx_buf, engine="openpyxl") as _writer:
-            num_a_export.to_excel(_writer, index=False, sheet_name="Numero A Mod")
-        _xlsx_buf.seek(0)
-
-        st.download_button(
-            label="⬇  DESCARGAR EXCEL — NÚMERO A MOD (TODAS LAS LLAMADAS)",
-            data=_xlsx_buf,
-            file_name=f"numero_a_mod_{fecha_cdr_s}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
         )
 
 if _active == "TRAFICO/CPS":
@@ -1550,7 +1621,7 @@ if st.button("⬇  EXPORTAR REPORTE PDF"):
 
         if max_retry > 0:
             story += [Paragraph("TOP REINTENTOS SIN CONEXIÓN", H2_)]
-            rtr = [["Numero B Mod","Intentos","Causa Principal","Carrier"]]
+            rtr = [["Numero B","Intentos","Causa Principal","Carrier"]]
             for _,r in retry.head(10).iterrows():
                 rtr.append([r["num_b"],fmt_n(r["intentos"]),r["causa_princ"][:38],r["proveedor"][:25]])
             story += [tblrl(rtr,[4.5*cm,2*cm,7*cm,3*cm]), Spacer(1,10)]
