@@ -361,6 +361,39 @@ hr { margin:0.6rem 0 !important; }
     inset 0 -1px 0 rgba(255,255,255,0.15) !important;
   transform:translateY(1px);
 }
+
+/* Variante cyan (igual al botón de nav ANI-DNIS ANALISIS) para descargas dentro de esa sub-hoja */
+.excel-dl-wrap-cyan { margin-top:2px; }
+.excel-dl-wrap-cyan [data-testid="stDownloadButton"] button {
+  background:linear-gradient(180deg,var(--cyan-brillante) 0%,var(--azul-principal) 100%) !important;
+  border:1px solid #001f36 !important;
+  border-top:1px solid rgba(255,255,255,0.55) !important;
+  border-left:1px solid rgba(255,255,255,0.25) !important;
+  color:#eafcff !important;
+  font-family:Orbitron,monospace !important;
+  font-size:0.62rem !important; font-weight:700 !important; letter-spacing:1px !important;
+  padding:5px 10px !important; border-radius:7px !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.45),
+    inset 0 -3px 5px rgba(0,0,0,0.45),
+    0 3px 6px rgba(0,0,0,0.45),
+    0 0 12px rgba(19,216,239,0.18) !important;
+  transition:all 0.12s ease !important;
+}
+.excel-dl-wrap-cyan [data-testid="stDownloadButton"] button:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    inset 0 -3px 5px rgba(0,0,0,0.5),
+    0 4px 10px rgba(0,0,0,0.5),
+    0 0 20px rgba(19,216,239,0.4) !important;
+  transform:translateY(-1px);
+}
+.excel-dl-wrap-cyan [data-testid="stDownloadButton"] button:active {
+  box-shadow:
+    inset 0 2px 6px rgba(0,0,0,0.6),
+    inset 0 -1px 0 rgba(255,255,255,0.2) !important;
+  transform:translateY(1px);
+}
 </style>
 """
 st.markdown(_CSS_TEMPLATE.replace("__BG_IMG_B64__", BG_IMG_B64), unsafe_allow_html=True)
@@ -435,17 +468,17 @@ ASR_REAL_EXCL = {
 
 CAT_COLORS = {
     "normal":      "#00ff88",
-    "congestion":  "#ff6b35",
+    "congestion":  "#8b0000",
     "error":       "#ff2d55",
-    "warning":     "#ffcc00",
+    "warning":     "#ff8c1a",
     "packet_loss": "#a855f7",
     "other":       "#3a7ca5",
 }
 
 C = dict(
     bg="#ffffff", card="#041625", border="#0d3a5e",
-    cyan="#00d4ff", green="#00ff88", yellow="#ffcc00",
-    orange="#ff6b35", red="#ff2d55", purple="#a855f7",
+    cyan="#00d4ff", green="#00ff88", yellow="#ff8c1a",
+    orange="#8b0000", red="#ff2d55", purple="#a855f7",
     text="#0e2840", muted="#5a7c93",
 )
 
@@ -496,14 +529,36 @@ def df_to_excel_bytes(df_export, sheet_name="Datos"):
     buf.seek(0)
     return buf
 
-def title_with_download(title_html, df_export, filename, key, small=False):
+def _lerp_color(frac, stops):
+    frac = max(0.0, min(1.0, frac))
+    n = len(stops) - 1
+    seg = frac * n
+    i = min(int(seg), n - 1)
+    local = seg - i
+    c0, c1 = stops[i], stops[i + 1]
+    r = int(c0[0] + (c1[0] - c0[0]) * local)
+    g = int(c0[1] + (c1[1] - c0[1]) * local)
+    b = int(c0[2] + (c1[2] - c0[2]) * local)
+    return f"rgb({r},{g},{b})"
+
+def gradient_css(series, vmin=None, vmax=None, stops=((255,255,255),(2,103,154))):
+    """Gradiente de color manual para tablas (sin depender de matplotlib,
+    a diferencia de Styler.background_gradient)."""
+    vmin = series.min() if vmin is None else vmin
+    vmax = series.max() if vmax is None else vmax
+    span = (vmax - vmin) or 1
+    return [f"background-color:{_lerp_color((v - vmin) / span, stops)}" for v in series]
+
+def title_with_download(title_html, df_export, filename, key, style="green"):
     """Renderiza un título de sección (o caption chico) con un botón de descarga
-    a Excel biselado alineado al final de la misma línea."""
+    a Excel biselado alineado al final de la misma línea.
+    style='green' (default, resto de la app) o 'cyan' (igual al botón de nav ANI-DNIS ANALISIS)."""
+    wrap_cls = "excel-dl-wrap-cyan" if style == "cyan" else "excel-dl-wrap"
     c_title, c_btn = st.columns([7.2, 1.4])
     with c_title:
         st.markdown(title_html, unsafe_allow_html=True)
     with c_btn:
-        st.markdown('<div class="excel-dl-wrap">', unsafe_allow_html=True)
+        st.markdown(f'<div class="{wrap_cls}">', unsafe_allow_html=True)
         st.download_button(
             "⬇ EXCEL", data=df_to_excel_bytes(df_export),
             file_name=filename,
@@ -864,8 +919,8 @@ ruta_df["asr_real"]   = np.where(
     (ruta_df["conectadas"]/ruta_df["ll_real"]*100).round(1), 0
 )
 
-down = prov_df[(prov_df["asr_real"]<5)  & (prov_df["llamadas"]>=10)]
-deg  = prov_df[(prov_df["asr_real"]>=5) & (prov_df["asr_real"]<30) & (prov_df["llamadas"]>=10)]
+down = prov_df[(prov_df["asr_global"]<5)  & (prov_df["llamadas"]>=10)]
+deg  = prov_df[(prov_df["asr_global"]>=5) & (prov_df["asr_global"]<30) & (prov_df["llamadas"]>=10)]
 
 failed = df[~df["is_connected"]].copy()
 failed["num_b"] = failed["Numero B"].astype(str).str.replace(".0","",regex=False).str.strip()
@@ -910,12 +965,11 @@ num_a_mod_df["asr_real"]   = np.where(ll_real_a>0, (num_a_mod_df["conectadas"]/l
 num_a_mod_df["minutos"]    = num_a_mod_df["minutos"].round(1)
 num_a_mod_df = num_a_mod_df.sort_values("total", ascending=False)
 
-delta_asr  = asr_real - asr_global
 cong_total = (df["causa_cat"]=="congestion").sum()
 cong_pct   = cong_total/total*100 if total else 0
 err_total  = int(causa_cnt[causa_cnt["cat"]=="error"]["count"].sum())
 err_pct    = err_total/total*100 if total else 0
-low_dest   = dest_df[(dest_df["asr_real_d"]<20) & (dest_df["llamadas"]>=30)]
+low_dest   = dest_df[(dest_df["asr_global_d"]<20) & (dest_df["llamadas"]>=30)]
 top_causa_desc = causa_cnt.iloc[0]["desc"] if not causa_cnt.empty else "N/D"
 top_causa_pct  = causa_cnt.iloc[0]["pct"]  if not causa_cnt.empty else 0
 top_prov       = prov_df.sort_values("llamadas",ascending=False).iloc[0] if not prov_df.empty else None
@@ -967,7 +1021,7 @@ kpi_grid = [
     ("NO CONECTADAS",   fmt_n(no_conn),   f"{no_conn/total*100:.0f}% del total",   "kpi-glass-warn" if no_conn/total>0.5 else ""),
     ("CON RINGBACK",    fmt_n(ringback),  f"{ringback/total*100:.0f}% del total",  ""),
     ("ASR GLOBAL",   f"{asr_global:.2f}%",   "TLC / TL",                            "kpi-glass-ok" if asr_global>=50 else "kpi-glass-warn"),
-    ("ASR REAL",     f"{asr_real:.2f}%",     f"Excl. {fmt_n(excl_count)} llamadas", "kpi-glass-ok" if asr_real>=50 else "kpi-glass-warn"),
+    ("MINUTOS TOTALES", fmt_n(int(tot_min)), "Duración acumulada",                 ""),
     ("CPS PROMEDIO", f"{avg_cps:.2f}",       f"Peak {peak_cps:.2f} cps",            "kpi-glass-warn" if peak_cps>10 else "kpi-glass-ok"),
     ("CONGESTIÓN",   fmt_n(int(cong_total)), f"{cong_pct:.1f}% del total",          "kpi-glass-warn" if cong_pct>3 else "kpi-glass-ok"),
 ]
@@ -1112,8 +1166,8 @@ if _active == "PERFIL TRÁFICO":
     for _, r in tbl_causa.iterrows():
         intensity = r["count"] / max_calls
         green_alpha = max(0.06, intensity * 0.55)
-        cat_color = {"normal":"#00ff88","congestion":"#ff6b35","error":"#ff2d55",
-                     "warning":"#ffcc00","packet_loss":"#a855f7","other":"#3a7ca5"}.get(r["cat"],"#3a7ca5")
+        cat_color = {"normal":"#00ff88","congestion":"#8b0000","error":"#ff2d55",
+                     "warning":"#ff8c1a","packet_loss":"#a855f7","other":"#3a7ca5"}.get(r["cat"],"#3a7ca5")
         rows_html += f"""<tr style="background:rgba(0,255,100,{green_alpha:.2f});">
           <td style="padding:6px 10px;font-family:Share Tech Mono,monospace;font-size:0.72rem;font-weight:400;color:#00d4ff;text-align:center;">{r["causa"]}</td>
           <td style="padding:6px 10px;font-family:Rajdhani,sans-serif;font-weight:600;font-size:0.68rem;font-weight:300;color:#6ea0b8;">{r["nombre"]}</td>
@@ -1141,7 +1195,6 @@ if _active == "PERFIL TRÁFICO":
 # TAB 2 — DESTINOS
 # ════════════════════════════════════════════════════════
 if _active == "DESTINOS":
-    ASR_REAL_GREEN = "#00994d"
 
     fig = make_subplots(specs=[[{"secondary_y":True}]])
     fig.add_trace(go.Bar(
@@ -1167,16 +1220,6 @@ if _active == "DESTINOS":
         textposition="top center",
         textfont=dict(size=9, color=C["yellow"], family="Rajdhani"),
     ), secondary_y=True)
-    fig.add_trace(go.Scatter(
-        name="ASR Real %",
-        x=dest_top["dest_nombre"], y=dest_top["asr_real_d"],
-        mode="lines+markers+text",
-        line=dict(color=ASR_REAL_GREEN, width=2.5),
-        marker=dict(size=7, color=ASR_REAL_GREEN, line=dict(color="#ffffff",width=1)),
-        text=dest_top["asr_real_d"].round(1).astype(str)+"%",
-        textposition="bottom center",
-        textfont=dict(size=9, color=ASR_REAL_GREEN, family="Rajdhani"),
-    ), secondary_y=True)
     fig.add_hline(y=50, line_dash="dot", line_color=C["orange"],
                   annotation_text="50% ASR", annotation_font_color=C["orange"],
                   secondary_y=True)
@@ -1187,7 +1230,7 @@ if _active == "DESTINOS":
     fig.update_yaxes(gridcolor="#e3edf5", zerolinecolor="#c7d8e5")
     fig.update_layout(**{**pl(),
         "height":440,
-        "title":dict(text="Llamadas · ASR Global · ASR Real — por destino (Top 30)",
+        "title":dict(text="Llamadas · ASR Global — por destino (Top 30)",
                      font=dict(color=C["cyan"],size=13)),
         "legend":dict(font=dict(color=C["text"],size=11), orientation="h", y=1.05, x=0),
         "yaxis2":dict(range=[0,130], gridcolor="#e3edf5", zerolinecolor="#c7d8e5",
@@ -1199,8 +1242,8 @@ if _active == "DESTINOS":
     # Tabla destinos
     def asr_dots(val):
         if val >= 70:   color, label = "#00ff88", "●●●"
-        elif val >= 40: color, label = "#ffcc00", "●●○"
-        else:           color, label = "#ff6b35", "●○○"
+        elif val >= 40: color, label = "#ff8c1a", "●●○"
+        else:           color, label = "#8b0000", "●○○"
         return f'<span style="color:{color};font-size:0.9rem;">{label}</span> <b style="color:{color};font-family:Rajdhani,sans-serif;font-weight:600;font-size:0.8rem;font-weight:400;">{val:.0f}%</b>'
 
     def bar_html(val, max_val, color="#00d4ff"):
@@ -1223,11 +1266,10 @@ if _active == "DESTINOS":
             f'<td style="padding:7px 10px;font-family:Rajdhani,sans-serif;font-weight:600;font-size:0.65rem;font-weight:300;color:#2e5f7e;text-align:center;">{i}</td>' +
             f'<td style="padding:7px 14px;font-family:Rajdhani,sans-serif;font-weight:600;font-size:0.9rem;font-weight:300;color:#e0f0ff;">{r["dest_nombre"]}</td>' +
             f'<td style="padding:7px 10px;font-family:Rajdhani,sans-serif;font-weight:600;font-size:0.65rem;font-weight:300;color:#2e5f7e;text-align:center;">{r["dest_modal"]}</td>' +
-            f'<td style="padding:7px 10px;">{asr_dots(r["asr_real_d"])}</td>' +
+            f'<td style="padding:7px 10px;">{asr_dots(r["asr_global_d"])}</td>' +
             f'<td style="padding:7px 10px;">{bar_html(r["llamadas"], max_calls_d)}</td>' +
             f'<td style="padding:7px 10px;font-family:Rajdhani,sans-serif;font-weight:600;font-size:0.78rem;font-weight:300;color:#a0c8e0;text-align:right;">{conn_fmt}</td>' +
             f'<td style="padding:7px 10px;font-family:Share Tech Mono,monospace;font-size:0.72rem;font-weight:400;color:#ffcc00;text-align:right;">{min_fmt}</td>' +
-            f'<td style="padding:7px 10px;font-family:Share Tech Mono,monospace;font-size:0.72rem;font-weight:300;color:#00d4ff;text-align:center;">{r["asr_global_d"]:.1f}%</td>' +
             '</tr>'
         )
     st.markdown(
@@ -1237,11 +1279,10 @@ if _active == "DESTINOS":
         '<th style="padding:9px 10px;font-family:Share Tech Mono,monospace;font-size:0.65rem;font-weight:400;color:#00d4ff;letter-spacing:3px;text-align:center;">N°</th>'
         '<th style="padding:9px 14px;font-family:Share Tech Mono,monospace;font-size:0.65rem;font-weight:400;color:#00d4ff;letter-spacing:3px;">DESTINO</th>'
         '<th style="padding:9px 10px;font-family:Share Tech Mono,monospace;font-size:0.65rem;font-weight:400;color:#00d4ff;letter-spacing:3px;text-align:center;">MODAL</th>'
-        '<th style="padding:9px 10px;font-family:Share Tech Mono,monospace;font-size:0.65rem;font-weight:400;color:#00d4ff;letter-spacing:3px;">ASR REAL</th>'
+        '<th style="padding:9px 10px;font-family:Share Tech Mono,monospace;font-size:0.65rem;font-weight:400;color:#00d4ff;letter-spacing:3px;">ASR GLOBAL</th>'
         '<th style="padding:9px 10px;font-family:Share Tech Mono,monospace;font-size:0.65rem;font-weight:400;color:#00d4ff;letter-spacing:3px;">TOTAL CALLS</th>'
         '<th style="padding:9px 10px;font-family:Share Tech Mono,monospace;font-size:0.65rem;font-weight:400;color:#00d4ff;letter-spacing:3px;text-align:right;">CALLS OK</th>'
         '<th style="padding:9px 10px;font-family:Share Tech Mono,monospace;font-size:0.65rem;font-weight:400;color:#ffcc00;letter-spacing:3px;text-align:right;">MINUTOS</th>'
-        '<th style="padding:9px 10px;font-family:Share Tech Mono,monospace;font-size:0.65rem;font-weight:400;color:#00d4ff;letter-spacing:3px;text-align:center;">ASR GLOBAL</th>'
         '</tr></thead>'
         f'<tbody>{rows_html}</tbody>'
         '</table></div>', unsafe_allow_html=True)
@@ -1254,7 +1295,7 @@ if _active == "PROVEEDORES":
     cp1, cp2 = st.columns(2)
     with cp1:
         ps = prov_df.sort_values("llamadas", ascending=True)
-        dot_colors = [C["red"] if a<30 else (C["yellow"] if a<60 else C["green"]) for a in ps["asr_real"]]
+        dot_colors = [C["red"] if a<30 else (C["yellow"] if a<60 else C["green"]) for a in ps["asr_global"]]
         fig = make_subplots(specs=[[{"secondary_y":True}]])
         fig.add_trace(go.Bar(
             name="Llamadas", y=ps["proveedor"].str[:26], x=ps["llamadas"],
@@ -1262,15 +1303,15 @@ if _active == "PROVEEDORES":
             text=ps["llamadas"], textposition="outside", textfont=dict(size=9),
         ))
         fig.add_trace(go.Scatter(
-            name="ASR Real %", y=ps["proveedor"].str[:26], x=ps["asr_real"],
+            name="ASR Global %", y=ps["proveedor"].str[:26], x=ps["asr_global"],
             mode="markers+text",
             marker=dict(color=dot_colors, size=11, symbol="diamond"),
-            text=ps["asr_real"].round(1).astype(str)+"%",
+            text=ps["asr_global"].round(1).astype(str)+"%",
             textposition="middle right", textfont=dict(size=8,color=C["text"]),
         ), secondary_y=True)
         fig.update_layout(**pl({
             "height":280,
-            "title":dict(text="Proveedor: Llamadas & ASR Real",font=dict(color=C["cyan"],size=13)),
+            "title":dict(text="Proveedor: Llamadas & ASR Global",font=dict(color=C["cyan"],size=13)),
             "yaxis2":dict(range=[0,140],gridcolor="#e3edf5",zerolinecolor="#c7d8e5"),
             "xaxis":dict(gridcolor="#e3edf5",zerolinecolor="#c7d8e5"),
             "legend":dict(font=dict(color=C["text"])),
@@ -1283,14 +1324,14 @@ if _active == "PROVEEDORES":
         fig = go.Figure(go.Bar(
             x=rs["ruta_dest"].str[:24], y=rs["llamadas"],
             marker=dict(color=rs["llamadas"],colorscale=[[0,"#0d3a5e"],[1,C["purple"]]]),
-            text=[f"ASR Real {r}% · {c:,}" for r,c in zip(rs["asr_real"].astype(int), rs["llamadas"])],
+            text=[f"ASR Global {r}% · {c:,}" for r,c in zip(rs["asr_global"].astype(int), rs["llamadas"])],
             textposition="outside", textfont=dict(color=C["text"],size=9),
             customdata=rs["proveedor"],
             hovertemplate="<b>%{x}</b><br>%{y:,} llamadas<br>%{text}<br>%{customdata}<extra></extra>",
         ))
         fig.update_layout(**pl({
             "height":280, "xaxis_tickangle":-25,
-            "title":dict(text="Ruta destino: Llamadas & ASR Real",font=dict(color=C["cyan"],size=13)),
+            "title":dict(text="Ruta destino: Llamadas & ASR Global",font=dict(color=C["cyan"],size=13)),
         }))
         st.plotly_chart(fig, use_container_width=True)
 
@@ -1299,41 +1340,40 @@ if _active == "PROVEEDORES":
     with cd1:
         if down.empty:
             st.markdown('<div style="font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#ff2d55;'
-                        'letter-spacing:3px;margin-bottom:6px;text-transform:uppercase;">🔴 POSIBLEMENTE CAÍDOS — ASR Real &lt; 5%</div>',
+                        'letter-spacing:3px;margin-bottom:6px;text-transform:uppercase;">🔴 POSIBLEMENTE CAÍDOS — ASR Global &lt; 5%</div>',
                         unsafe_allow_html=True)
             st.markdown('<div style="color:#00ff88;font-family:Rajdhani,sans-serif;font-size:0.9rem;font-weight:600;">'
                         '✓ Sin proveedores caídos</div>', unsafe_allow_html=True)
         else:
-            down_export = down[["proveedor","llamadas","conectadas","asr_global","asr_real"]].rename(
+            down_export = down[["proveedor","llamadas","conectadas","asr_global"]].rename(
                 columns={"proveedor":"Proveedor","llamadas":"Llamadas","conectadas":"Conectadas",
-                         "asr_global":"ASR Global %","asr_real":"ASR Real %"})
+                         "asr_global":"ASR Global %"})
             title_with_download(
                 '<div style="font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#ff2d55;'
-                'letter-spacing:3px;text-transform:uppercase;">🔴 POSIBLEMENTE CAÍDOS — ASR Real &lt; 5%</div>',
+                'letter-spacing:3px;text-transform:uppercase;">🔴 POSIBLEMENTE CAÍDOS — ASR Global &lt; 5%</div>',
                 down_export, "proveedores_caidos.xlsx", "dl_prov_caidos")
             st.dataframe(down_export, hide_index=True, use_container_width=True)
     with cd2:
         if deg.empty:
-            st.markdown('<div style="font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#ffcc00;'
-                        'letter-spacing:3px;margin-bottom:6px;text-transform:uppercase;">🟡 DEGRADADOS — ASR Real 5%–30%</div>',
+            st.markdown('<div style="font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#ff8c1a;'
+                        'letter-spacing:3px;margin-bottom:6px;text-transform:uppercase;">🟡 DEGRADADOS — ASR Global 5%–30%</div>',
                         unsafe_allow_html=True)
             st.markdown('<div style="color:#00ff88;font-family:Rajdhani,sans-serif;font-size:0.9rem;font-weight:600;">'
                         '✓ Sin degradación detectada</div>', unsafe_allow_html=True)
         else:
-            deg_export = deg[["proveedor","llamadas","conectadas","asr_global","asr_real"]].rename(
+            deg_export = deg[["proveedor","llamadas","conectadas","asr_global"]].rename(
                 columns={"proveedor":"Proveedor","llamadas":"Llamadas","conectadas":"Conectadas",
-                         "asr_global":"ASR Global %","asr_real":"ASR Real %"})
+                         "asr_global":"ASR Global %"})
             title_with_download(
-                '<div style="font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#ffcc00;'
-                'letter-spacing:3px;text-transform:uppercase;">🟡 DEGRADADOS — ASR Real 5%–30%</div>',
+                '<div style="font-family:Share Tech Mono,monospace;font-size:0.72rem;color:#ff8c1a;'
+                'letter-spacing:3px;text-transform:uppercase;">🟡 DEGRADADOS — ASR Global 5%–30%</div>',
                 deg_export, "proveedores_degradados.xlsx", "dl_prov_deg")
             st.dataframe(deg_export, hide_index=True, use_container_width=True)
 
     ruta_export = ruta_df.sort_values("llamadas",ascending=False).rename(columns={
         "proveedor":"Proveedor","ruta_dest":"Ruta","llamadas":"Llamadas",
-        "conectadas":"Conectadas","excluidas":"Excluidas","asr_global":"ASR Global %",
-        "asr_real":"ASR Real %",
-    })
+        "conectadas":"Conectadas","asr_global":"ASR Global %",
+    })[["Proveedor","Ruta","Llamadas","Conectadas","ASR Global %"]]
     title_with_download(
         '<div class="section-header" style="margin-top:14px;">▸ TABLA COMPLETA PROVEEDOR / RUTA</div>',
         ruta_export, "proveedor_ruta.xlsx", "dl_prov_ruta")
@@ -1358,7 +1398,7 @@ if _active == "ANI-DNIS ANALISIS":
         })
         title_with_download(
             '<div class="section-header">▸ LLAMADAS/REINTENTOS SIN CONEXIÓN — NÚMERO DESTINO</div>',
-            retry_tbl, "reintentos_numero_destino.xlsx", "dl_retry_b")
+            retry_tbl, "reintentos_numero_destino.xlsx", "dl_retry_b", style="cyan")
         st.dataframe(
             retry_tbl.style.set_table_styles([
                 {"selector":"th", "props":[("color","#000000"),("font-weight","bold"),
@@ -1378,7 +1418,7 @@ if _active == "ANI-DNIS ANALISIS":
         })
         title_with_download(
             '<div class="section-header" style="margin-top:12px;">▸ LLAMADAS/REINTENTOS — NÚMERO ANI IPLAN — NO CONECTADAS</div>',
-            retry_a_tbl, "reintentos_numero_ani_iplan.xlsx", "dl_retry_a")
+            retry_a_tbl, "reintentos_numero_ani_iplan.xlsx", "dl_retry_a", style="cyan")
         st.dataframe(
             retry_a_tbl.style.set_table_styles([
                 {"selector":"th", "props":[("color","#000000"),("font-weight","bold"),
@@ -1414,13 +1454,15 @@ if _active == "ANI-DNIS ANALISIS":
         title_with_download(
             '<div style="font-family:Share Tech Mono,monospace;font-size:0.7rem;color:#3a7ca5;">'
             'Exportar tabla completa</div>',
-            num_a_show, f"numero_ani_iplan_conectadas_c16_{fecha_cdr_s}.xlsx", "dl_numa_c16")
+            num_a_show, f"numero_ani_iplan_conectadas_c16_{fecha_cdr_s}.xlsx", "dl_numa_c16", style="cyan")
         st.dataframe(
             num_a_show.style.set_table_styles([
                 {"selector":"th", "props":[("color","#000000"),("font-weight","bold"),
                                            ("background-color","#c8e6ff"),("font-size","0.82rem")]},
-            ]).background_gradient(subset=["Llamadas C16 (Conectadas)"], cmap="Blues")
-             .background_gradient(subset=["% C16 / Total"], cmap="RdYlGn", vmin=0, vmax=100),
+            ]).apply(gradient_css, subset=["Llamadas C16 (Conectadas)"],
+                     stops=((255,255,255),(2,103,154)))
+             .apply(gradient_css, subset=["% C16 / Total"], vmin=0, vmax=100,
+                     stops=((211,47,47),(255,255,255),(34,197,94))),
             hide_index=True, use_container_width=True, height=500
         )
 
@@ -1435,8 +1477,6 @@ if _active == "TRAFICO/CPS":
     ts["cps"]     = (ts["llamadas"]/60).round(2)
     ts["no_conn"] = ts["llamadas"] - ts["conectadas"]
     ts["asr_g"]   = (ts["conectadas"]/ts["llamadas"]*100).round(1)
-    ts["ll_real"] = ts["llamadas"] - ts["excluidas"]
-    ts["asr_r"]   = np.where(ts["ll_real"]>0, (ts["conectadas"]/ts["ll_real"]*100).round(1), 0)
     ts["hora"]    = ts["minute"].dt.strftime("%H:%M")
 
     # ─── Gráfico dedicado de CPS — eje X hora, eje Y cps, picos etiquetados ───
@@ -1474,7 +1514,7 @@ if _active == "TRAFICO/CPS":
         rows=3, cols=1, shared_xaxes=True,
         row_heights=[0.45, 0.28, 0.27],
         vertical_spacing=0.06,
-        subplot_titles=["Llamadas / minuto","CPS (Calls per Second)","ASR Global %  vs  ASR Real %"],
+        subplot_titles=["Llamadas / minuto","CPS (Calls per Second)","ASR Global %"],
     )
     fig.add_trace(go.Scatter(
         x=ts["hora"], y=ts["llamadas"], name="Total",
@@ -1504,18 +1544,11 @@ if _active == "TRAFICO/CPS":
     ), row=2, col=1)
     fig.add_trace(go.Scatter(
         x=ts["hora"], y=ts["asr_g"], name="ASR Global %",
-        mode="lines+markers+text", line=dict(color=C["yellow"],width=1.5,dash="dot"),
-        marker=dict(size=5),
+        mode="lines+markers+text", line=dict(color=C["yellow"],width=2),
+        marker=dict(size=5,
+                    color=[C["red"] if a<30 else (C["yellow"] if a<60 else C["green"]) for a in ts["asr_g"]]),
         text=ts["asr_g"].astype(str)+"%", textposition="top center",
         textfont=dict(size=8,color=C["yellow"],family="Rajdhani"),
-    ), row=3, col=1)
-    fig.add_trace(go.Scatter(
-        x=ts["hora"], y=ts["asr_r"], name="ASR Real %",
-        mode="lines+markers+text", line=dict(color=C["green"],width=2),
-        marker=dict(size=5,
-                    color=[C["red"] if a<30 else (C["yellow"] if a<60 else C["green"]) for a in ts["asr_r"]]),
-        text=ts["asr_r"].astype(str)+"%", textposition="bottom center",
-        textfont=dict(size=8,color=C["green"],family="Rajdhani"),
     ), row=3, col=1)
     fig.add_hline(y=50, line_dash="dot", line_color=C["orange"],
                   annotation_text="50%", annotation_font_color=C["orange"], row=3, col=1)
@@ -1525,7 +1558,7 @@ if _active == "TRAFICO/CPS":
     fig.update_layout(**{**pl(),
         "height":520, "showlegend":True,
         "legend":dict(font=dict(color=C["text"],size=9), orientation="h", y=1.02, x=0),
-        "title":dict(text="Evolución temporal del tráfico — ASR Global vs ASR Real",
+        "title":dict(text="Evolución temporal del tráfico — ASR Global",
                      font=dict(color=C["cyan"],size=13)),
     })
     st.plotly_chart(fig, use_container_width=True)
@@ -1593,9 +1626,9 @@ if st.button("⬇  EXPORTAR REPORTE PDF"):
         ]), Spacer(1,10)]
 
         story += [Paragraph("KPIs PRINCIPALES", H2_), tblrl([
-            ["Total","Conectadas","Ringback","No Conectadas","ASR Global","ASR Real","CPS Prom","CPS Peak"],
+            ["Total","Conectadas","Ringback","No Conectadas","ASR Global","CPS Prom","CPS Peak"],
             [fmt_n(total),fmt_n(connected),fmt_n(ringback),fmt_n(no_conn),
-             f"{asr_global:.2f}%",f"{asr_real:.2f}%",f"{avg_cps:.2f}",f"{peak_cps:.2f}"],
+             f"{asr_global:.2f}%",f"{avg_cps:.2f}",f"{peak_cps:.2f}"],
         ]), Spacer(1,10)]
 
         story += [Paragraph("TOP RELEASE CAUSES", H2_)]
@@ -1605,19 +1638,19 @@ if st.button("⬇  EXPORTAR REPORTE PDF"):
         story += [tblrl(rcr,[1.5*cm,7.5*cm,2.5*cm,2*cm,1.5*cm]), Spacer(1,10)]
 
         story += [Paragraph("TOP DESTINOS", H2_)]
-        dtr = [["Destino","Modalidad","Llamadas","Conectadas","Min","ASR Global","ASR Real"]]
+        dtr = [["Destino","Modalidad","Llamadas","Conectadas","Min","ASR Global"]]
         for _,r in dest_df.sort_values("llamadas",ascending=False).head(12).iterrows():
             dtr.append([r["dest_nombre"][:28],str(r["dest_modal"])[:10],
                         fmt_n(r["llamadas"]),fmt_n(r["conectadas"]),
-                        f"{r['minutos']:.0f}",f"{r['asr_global_d']:.1f}%",f"{r['asr_real_d']:.1f}%"])
-        story += [tblrl(dtr,[4.5*cm,1.8*cm,2.2*cm,2.2*cm,1.3*cm,2*cm,2*cm]), Spacer(1,10)]
+                        f"{r['minutos']:.0f}",f"{r['asr_global_d']:.1f}%"])
+        story += [tblrl(dtr,[4.5*cm,1.8*cm,2.2*cm,2.2*cm,1.3*cm,2*cm]), Spacer(1,10)]
 
         story += [Paragraph("ANÁLISIS POR PROVEEDOR", H2_)]
-        pvr = [["Proveedor","Llamadas","Conectadas","ASR Global","ASR Real"]]
+        pvr = [["Proveedor","Llamadas","Conectadas","ASR Global"]]
         for _,r in prov_df.sort_values("llamadas",ascending=False).iterrows():
             pvr.append([r["proveedor"][:36],fmt_n(r["llamadas"]),
-                        fmt_n(r["conectadas"]),f"{r['asr_global']:.1f}%",f"{r['asr_real']:.1f}%"])
-        story += [tblrl(pvr,[7.5*cm,2.5*cm,2.5*cm,2.0*cm,2.0*cm]), Spacer(1,10)]
+                        fmt_n(r["conectadas"]),f"{r['asr_global']:.1f}%"])
+        story += [tblrl(pvr,[7.5*cm,2.5*cm,2.5*cm,2.0*cm]), Spacer(1,10)]
 
         if max_retry > 0:
             story += [Paragraph("TOP REINTENTOS SIN CONEXIÓN", H2_)]
@@ -1628,8 +1661,8 @@ if st.button("⬇  EXPORTAR REPORTE PDF"):
 
         story += [Paragraph("DIAGNÓSTICO AUTOMÁTICO", H2_)]
         diags = []
-        diags.append(("ok" if asr_real>=50 else "warn",
-                       f"ASR Global {asr_global:.2f}% · ASR Real {asr_real:.2f}% · Δ+{delta_asr:.2f}pp"))
+        diags.append(("ok" if asr_global>=50 else "warn",
+                       f"ASR Global {asr_global:.2f}%"))
         if peak_cps > 10: diags.append(("warn",f"Peak CPS {peak_cps:.2f} — verificar capacity"))
         if c102>0 or pl_pct>2: diags.append(("warn",f"Síntomas PL/RTT: {pl_total} eventos, C102={c102}"))
         if not down.empty: diags.append(("warn",f"Carrier caído: {', '.join(down['proveedor'].tolist())}"))
@@ -1681,32 +1714,24 @@ def insight(title, text, kind="info"):
         unsafe_allow_html=True)
 
 # 1. ASR
-insight("ASR GLOBAL vs ASR REAL",
-    f"<b>ASR Global: {asr_global:.2f}%</b> · <b>ASR Real: {asr_real:.2f}%</b> "
-    f"(diferencia: +{delta_asr:.2f} pp). "
-    f"Se excluyeron <b>{fmt_n(excl_count)} llamadas</b> del denominador. "
-    + ("Diferencia significativa → fallas principalmente por comportamiento del destino, no por Darwin." if delta_asr > 20
-       else "Diferencia reducida → fallas con origen mayoritariamente en la infraestructura."),
-    "ok" if asr_real >= 50 else "warn")
-
-if asr_real < 30:
-    insight("ASR REAL CRÍTICO",
-        f"ASR Real <b>{asr_real:.2f}%</b> — muy por debajo del umbral (&gt;50%). "
+if asr_global < 30:
+    insight("ASR GLOBAL CRÍTICO",
+        f"ASR Global <b>{asr_global:.2f}%</b> — muy por debajo del umbral (&gt;50%). "
         f"Causa dominante: <b>{top_causa_desc}</b> ({top_causa_pct}%). "
         f"Revisar carriers, rutas Darwin y trunks SIP.", "warn")
-elif asr_real < 50:
-    insight("ASR REAL BAJO",
-        f"ASR Real <b>{asr_real:.2f}%</b>. Causa principal: <b>{top_causa_desc}</b> ({top_causa_pct}%). "
+elif asr_global < 50:
+    insight("ASR GLOBAL BAJO",
+        f"ASR Global <b>{asr_global:.2f}%</b>. Causa principal: <b>{top_causa_desc}</b> ({top_causa_pct}%). "
         f"Verificar si un carrier o destino específico traccionó el indicador.", "warn")
 else:
-    insight("ASR REAL NOMINAL",
-        f"ASR Real <b>{asr_real:.2f}%</b> — en rango operativo. "
+    insight("ASR GLOBAL NOMINAL",
+        f"ASR Global <b>{asr_global:.2f}%</b> — en rango operativo. "
         f"Causa de liberación más frecuente: <b>{top_causa_desc}</b> ({top_causa_pct}%).", "ok")
 
 if top_prov is not None:
     insight("PERFIL DE TRÁFICO",
         f"Destino líder: <b>{top_dest['dest_nombre'] if top_dest is not None else 'N/D'}</b> "
-        f"({fmt_n(top_dest['llamadas']) if top_dest is not None else 0} llamadas · ASR Real {top_dest['asr_real_d']:.0f}%). "
+        f"({fmt_n(top_dest['llamadas']) if top_dest is not None else 0} llamadas · ASR Global {top_dest['asr_global_d']:.0f}%). "
         f"Composición: <b>{int(mob_pct)}% Móvil / {100-int(mob_pct)}% Fijo</b>. "
         f"Carrier dominante: <b>{top_prov['proveedor']}</b> ({prov_conc:.0f}% del total). "
         + ("<b>Alta concentración</b> — riesgo de impacto masivo." if prov_conc>70 else "Distribución aceptable entre carriers."))
@@ -1739,12 +1764,12 @@ if max_retry > 10:
         f"Causa: <b>{retry['causa_princ'].iloc[0]}</b> · Carrier: <b>{retry['proveedor'].iloc[0]}</b>.", "warn")
 if not low_dest.empty:
     names = ", ".join(low_dest.sort_values("llamadas",ascending=False).head(5)["dest_nombre"].tolist())
-    insight("DESTINOS ASR REAL &lt;20%",
+    insight("DESTINOS ASR GLOBAL &lt;20%",
         f"<b>{names}</b>. Revisar cobertura del carrier, rutas y tasa de inválidos/portados.", "warn")
 if not down.empty:
     names = ", ".join(down["proveedor"].tolist())
     insight("CARRIER(S) POSIBLEMENTE CAÍDO(S)",
-        f"<b>{names}</b> con ASR Real &lt;5% y volumen significativo. "
+        f"<b>{names}</b> con ASR Global &lt;5% y volumen significativo. "
         f"Verificar rutas Darwin, enlace SIP y contactar al carrier.", "warn")
 
 
